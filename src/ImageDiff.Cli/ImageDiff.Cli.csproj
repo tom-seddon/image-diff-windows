@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>imgdiff</AssemblyName>
+    <RootNamespace>ImageDiff.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ImageDiff.Core\ImageDiff.Core.csproj" />
+    <Compile Include="..\ImageDiff\ImageFile.cs" Link="ImageFile.cs" />
+  </ItemGroup>
+
+</Project>

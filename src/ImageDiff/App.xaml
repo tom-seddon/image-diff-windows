@@ -1,0 +1,16 @@
+<Application x:Class="ImageDiff.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <!-- Checkerboard shown behind images so transparency is visible. -->
+        <DrawingBrush x:Key="Checkerboard" TileMode="Tile" Viewport="0,0,16,16" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#FFFFFF" Geometry="M0,0 H2 V2 H0 Z" />
+                    <GeometryDrawing Brush="#E0E0E0" Geometry="M0,0 H1 V1 H0 Z M1,1 H2 V2 H1 Z" />
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+    </Application.Resources>
+</Application>
