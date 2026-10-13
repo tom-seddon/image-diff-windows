@@ -12,22 +12,26 @@ public partial class MainWindow : Window
 {
     private const double MinZoom = 0.02, MaxZoom = 64;
 
+    // A left click that moves less than this (in screen units) flips instead of panning.
+    private const double ClickSlop = 4;
+
     private PixelImage? _left, _right, _highlight;
     private DiffResult? _diff;
+    private string _leftName = "", _rightName = "";
     private string? _pendingOutputPath;
 
     private ViewMode _mode = ViewMode.Difference;
+    private bool _showingRight;
     private double _zoom = 1;
     private bool _fit = true;
-    private double _split = 0.5;
 
     private int _loadVersion, _diffVersion;
-    private bool _syncingScroll;
 
-    private ScrollViewer? _panScroll;
+    private bool _mouseDown;
+    private bool _panning;
+    private MouseButton _panButton;
     private Point _panStart;
     private Vector _panStartOffset;
-    private bool _draggingSplit;
 
     public MainWindow(CommandLineOptions options)
     {
@@ -39,21 +43,14 @@ public partial class MainWindow : Window
         _pendingOutputPath = options.OutputPath;
         SetMode(options.Mode);
 
-        foreach (var scroll in AllScrollViewers)
-            scroll.ScrollChanged += Scroll_ScrollChanged;
-
         ViewHost.SizeChanged += (_, _) => { if (_fit) ApplyFit(); };
         ViewHost.PreviewMouseWheel += ViewHost_PreviewMouseWheel;
-        ViewHost.PreviewMouseDown += ViewHost_PreviewMouseDown;
-        ViewHost.PreviewMouseMove += ViewHost_PreviewMouseMove;
-        ViewHost.PreviewMouseUp += ViewHost_PreviewMouseUp;
+        ViewHost.PreviewMouseMove += (_, e) => UpdatePixelReadout(e);
         ViewHost.MouseLeave += (_, _) => PixelText.Text = "";
-        ViewHost.LostMouseCapture += (_, _) => { _panScroll = null; ViewHost.ClearValue(CursorProperty); };
-
-        SliderCanvas.MouseLeftButtonDown += SliderCanvas_MouseLeftButtonDown;
-        SliderCanvas.MouseMove += SliderCanvas_MouseMove;
-        SliderCanvas.MouseLeftButtonUp += (_, _) => { _draggingSplit = false; SliderCanvas.ReleaseMouseCapture(); };
-        SliderCanvas.LostMouseCapture += (_, _) => _draggingSplit = false;
+        ViewCanvas.PreviewMouseDown += ViewCanvas_PreviewMouseDown;
+        ViewCanvas.PreviewMouseMove += ViewCanvas_PreviewMouseMove;
+        ViewCanvas.PreviewMouseUp += ViewCanvas_PreviewMouseUp;
+        ViewCanvas.LostMouseCapture += (_, _) => EndMouse();
 
         Loaded += async (_, _) =>
         {
@@ -65,17 +62,7 @@ public partial class MainWindow : Window
         };
     }
 
-    private ScrollViewer[] AllScrollViewers => [DiffScroll, SideLeftScroll, SideRightScroll, SliderScroll];
-
     private bool HasBothPaths => !string.IsNullOrWhiteSpace(LeftPathBox.Text) && !string.IsNullOrWhiteSpace(RightPathBox.Text);
-
-    /// <summary>The scroll viewer that drives zoom anchoring and fitting in the current view.</summary>
-    private ScrollViewer ActiveScroll => _mode switch
-    {
-        ViewMode.SideBySide => SideLeftScroll,
-        ViewMode.Slider => SliderScroll,
-        _ => DiffScroll,
-    };
 
     // ---------------------------------------------------------------- Loading and comparing
 
@@ -107,15 +94,15 @@ public partial class MainWindow : Window
 
         _left = left;
         _right = right;
+        _leftName = $"{Path.GetFileName(leftPath)}  ({left.Width}×{left.Height})";
+        _rightName = $"{Path.GetFileName(rightPath)}  ({right.Width}×{right.Height})";
 
-        SideLeftImage.Source = SliderLeftImage.Source = ImageFile.ToBitmapSource(left);
-        SideRightImage.Source = SliderRightImage.Source = ImageFile.ToBitmapSource(right);
-        SideLeftHeader.Text = $"{Path.GetFileName(leftPath)}  ({left.Width}×{left.Height})";
-        SideRightHeader.Text = $"{Path.GetFileName(rightPath)}  ({right.Width}×{right.Height})";
-        SideLeftHeader.ToolTip = leftPath;
-        SideRightHeader.ToolTip = rightPath;
+        LeftImage.Source = ImageFile.ToBitmapSource(left);
+        RightImage.Source = ImageFile.ToBitmapSource(right);
         Title = $"{Path.GetFileName(leftPath)} vs {Path.GetFileName(rightPath)} - Image Diff";
         EmptyHint.Visibility = Visibility.Collapsed;
+        FlipButton.IsEnabled = true;
+        UpdateVisibleImage();
 
         await RecomputeDiffAsync();
     }
@@ -143,13 +130,8 @@ public partial class MainWindow : Window
         _highlight = highlight;
         DiffImage.Source = ImageFile.ToBitmapSource(highlight);
         SaveDiffButton.IsEnabled = true;
-
-        foreach (var canvas in new[] { DiffCanvas, SideLeftCanvas, SideRightCanvas, SliderCanvas })
-        {
-            canvas.Width = diff.Width;
-            canvas.Height = diff.Height;
-        }
-        UpdateSlider();
+        ViewCanvas.Width = diff.Width;
+        ViewCanvas.Height = diff.Height;
         ShowStatus(diff.Summary);
 
         if (sizeChanged && _fit)
@@ -213,9 +195,16 @@ public partial class MainWindow : Window
         string current = Unquote(target.Text);
         if (current.Length > 0)
         {
-            string? dir = Path.GetDirectoryName(Path.GetFullPath(current));
-            if (Directory.Exists(dir))
-                dialog.InitialDirectory = dir;
+            try
+            {
+                string? dir = Path.GetDirectoryName(Path.GetFullPath(current));
+                if (Directory.Exists(dir))
+                    dialog.InitialDirectory = dir;
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // Not a usable path; open the dialog in its default folder.
+            }
         }
         if (dialog.ShowDialog(this) != true)
             return;
@@ -257,54 +246,46 @@ public partial class MainWindow : Window
 
     private void Mode_Checked(object sender, RoutedEventArgs e)
     {
-        if (DiffScroll == null)
+        if (ViewCanvas == null)
             return; // Still initialising.
-        var mode = sender == SideModeButton ? ViewMode.SideBySide
-            : sender == SliderModeButton ? ViewMode.Slider
-            : ViewMode.Difference;
-        SetMode(mode);
+        SetMode(sender == FlipModeButton ? ViewMode.Flip : ViewMode.Difference);
     }
+
+    private void Flip_Click(object sender, RoutedEventArgs e) => Flip();
 
     private void SetMode(ViewMode mode)
     {
-        var previous = ActiveScroll;
         _mode = mode;
-
         DiffModeButton.IsChecked = mode == ViewMode.Difference;
-        SideModeButton.IsChecked = mode == ViewMode.SideBySide;
-        SliderModeButton.IsChecked = mode == ViewMode.Slider;
-
-        DiffScroll.Visibility = mode == ViewMode.Difference ? Visibility.Visible : Visibility.Collapsed;
-        SideView.Visibility = mode == ViewMode.SideBySide ? Visibility.Visible : Visibility.Collapsed;
-        SliderScroll.Visibility = mode == ViewMode.Slider ? Visibility.Visible : Visibility.Collapsed;
-
-        // Keep the same part of the image in view when switching.
-        var next = ActiveScroll;
-        if (next != previous && IsLoaded)
-        {
-            double h = previous.HorizontalOffset, v = previous.VerticalOffset;
-            Dispatcher.InvokeAsync(() =>
-            {
-                if (_fit)
-                {
-                    ApplyFit();
-                    return;
-                }
-                foreach (var scroll in VisibleScrollViewers())
-                {
-                    scroll.ScrollToHorizontalOffset(h);
-                    scroll.ScrollToVerticalOffset(v);
-                }
-            }, System.Windows.Threading.DispatcherPriority.Loaded);
-        }
+        FlipModeButton.IsChecked = mode == ViewMode.Flip;
+        UpdateVisibleImage();
     }
 
-    private IEnumerable<ScrollViewer> VisibleScrollViewers() => _mode switch
+    /// <summary>Switches between the left and right image, entering Flip view if needed.</summary>
+    private void Flip()
     {
-        ViewMode.SideBySide => [SideLeftScroll, SideRightScroll],
-        ViewMode.Slider => [SliderScroll],
-        _ => [DiffScroll],
-    };
+        if (_left == null || _right == null)
+            return;
+        if (_mode == ViewMode.Flip)
+            _showingRight = !_showingRight;
+        else
+            SetMode(ViewMode.Flip);
+        UpdateVisibleImage();
+    }
+
+    private void UpdateVisibleImage()
+    {
+        bool flip = _mode == ViewMode.Flip;
+        // Switching is a plain visibility change: both images stay decoded and laid out, so it is instant.
+        DiffImage.Visibility = flip ? Visibility.Collapsed : Visibility.Visible;
+        LeftImage.Visibility = flip && !_showingRight ? Visibility.Visible : Visibility.Collapsed;
+        RightImage.Visibility = flip && _showingRight ? Visibility.Visible : Visibility.Collapsed;
+
+        bool loaded = _left != null && _right != null;
+        FlipBadge.Visibility = flip && loaded ? Visibility.Visible : Visibility.Collapsed;
+        FlipBadgeText.Text = _showingRight ? $"Right: {_rightName}" : $"Left: {_leftName}";
+        FlipButton.Content = !flip ? "Flip" : _showingRight ? "Show left" : "Show right";
+    }
 
     // ---------------------------------------------------------------- Zoom and scrolling
 
@@ -322,9 +303,8 @@ public partial class MainWindow : Window
         if (_diff == null || _diff.Width == 0 || _diff.Height == 0)
             return;
 
-        var scroll = ActiveScroll;
-        scroll.UpdateLayout();
-        double width = scroll.ActualWidth - 2, height = scroll.ActualHeight - 2;
+        ViewScroll.UpdateLayout();
+        double width = ViewScroll.ActualWidth - 2, height = ViewScroll.ActualHeight - 2;
         if (width <= 0 || height <= 0)
             return;
 
@@ -336,28 +316,23 @@ public partial class MainWindow : Window
     private void SetZoom(double zoom, Point? anchor)
     {
         zoom = Math.Clamp(zoom, MinZoom, MaxZoom);
-        var scroll = ActiveScroll;
-        var at = anchor ?? new Point(scroll.ViewportWidth / 2, scroll.ViewportHeight / 2);
-        double imageX = (scroll.HorizontalOffset + at.X) / _zoom;
-        double imageY = (scroll.VerticalOffset + at.Y) / _zoom;
+        var at = anchor ?? new Point(ViewScroll.ViewportWidth / 2, ViewScroll.ViewportHeight / 2);
+        double imageX = (ViewScroll.HorizontalOffset + at.X) / _zoom;
+        double imageY = (ViewScroll.VerticalOffset + at.Y) / _zoom;
 
         _zoom = zoom;
         ApplyZoom();
 
-        scroll.UpdateLayout();
-        scroll.ScrollToHorizontalOffset(imageX * _zoom - at.X);
-        scroll.ScrollToVerticalOffset(imageY * _zoom - at.Y);
+        ViewScroll.UpdateLayout();
+        ViewScroll.ScrollToHorizontalOffset(imageX * _zoom - at.X);
+        ViewScroll.ScrollToVerticalOffset(imageY * _zoom - at.Y);
     }
 
     private void ApplyZoom()
     {
-        foreach (var scale in new[] { DiffScale, SideLeftScale, SideRightScale, SliderScale })
-        {
-            scale.ScaleX = _zoom;
-            scale.ScaleY = _zoom;
-        }
+        ViewScale.ScaleX = _zoom;
+        ViewScale.ScaleY = _zoom;
         ZoomText.Text = $"{_zoom * 100:0.#}%";
-        UpdateSlider();
     }
 
     private void ViewHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -367,98 +342,63 @@ public partial class MainWindow : Window
         e.Handled = true;
         _fit = false;
         double factor = e.Delta > 0 ? 1.25 : 0.8;
-        SetZoom(_zoom * factor, e.GetPosition(ActiveScroll));
+        SetZoom(_zoom * factor, e.GetPosition(ViewScroll));
     }
 
-    private void Scroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    // ---------------------------------------------------------------- Mouse: panning, click to flip, pixel readout
+
+    private void ViewCanvas_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        // Side-by-side panes scroll together.
-        if (_syncingScroll || _mode != ViewMode.SideBySide || (e.HorizontalChange == 0 && e.VerticalChange == 0))
-            return;
-        var other = sender == SideLeftScroll ? SideRightScroll : sender == SideRightScroll ? SideLeftScroll : null;
-        if (other == null)
-            return;
-        _syncingScroll = true;
-        other.ScrollToHorizontalOffset(e.HorizontalOffset);
-        other.ScrollToVerticalOffset(e.VerticalOffset);
-        _syncingScroll = false;
-    }
-
-    // ---------------------------------------------------------------- Mouse: panning, slider, pixel readout
-
-    private void ViewHost_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        bool panButton = e.ChangedButton is MouseButton.Middle or MouseButton.Right
-            || (e.ChangedButton == MouseButton.Left && _mode != ViewMode.Slider);
-        if (!panButton)
+        if (_mouseDown || e.ChangedButton is not (MouseButton.Left or MouseButton.Middle or MouseButton.Right))
             return;
 
-        var canvas = CanvasUnder(e.OriginalSource as DependencyObject);
-        if (canvas == null)
-            return;
-
-        _panScroll = FindAncestor<ScrollViewer>(canvas);
-        if (_panScroll == null)
-            return;
-        _panStart = e.GetPosition(ViewHost);
-        _panStartOffset = new Vector(_panScroll.HorizontalOffset, _panScroll.VerticalOffset);
-        ViewHost.CaptureMouse();
-        ViewHost.Cursor = Cursors.ScrollAll;
+        _mouseDown = true;
+        _panning = false;
+        _panButton = e.ChangedButton;
+        _panStart = e.GetPosition(ViewScroll);
+        _panStartOffset = new Vector(ViewScroll.HorizontalOffset, ViewScroll.VerticalOffset);
+        ViewCanvas.CaptureMouse();
         e.Handled = true;
     }
 
-    private void ViewHost_PreviewMouseMove(object sender, MouseEventArgs e)
+    private void ViewCanvas_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_panScroll != null)
+        if (!_mouseDown)
+            return;
+
+        var delta = e.GetPosition(ViewScroll) - _panStart;
+        if (!_panning && delta.Length < ClickSlop)
+            return;
+
+        if (!_panning)
         {
-            var delta = e.GetPosition(ViewHost) - _panStart;
-            _panScroll.ScrollToHorizontalOffset(_panStartOffset.X - delta.X);
-            _panScroll.ScrollToVerticalOffset(_panStartOffset.Y - delta.Y);
+            _panning = true;
+            ViewCanvas.Cursor = Cursors.ScrollAll;
         }
-        UpdatePixelReadout(e);
+        ViewScroll.ScrollToHorizontalOffset(_panStartOffset.X - delta.X);
+        ViewScroll.ScrollToVerticalOffset(_panStartOffset.Y - delta.Y);
     }
 
-    private void ViewHost_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    private void ViewCanvas_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (_panScroll == null)
+        if (!_mouseDown || e.ChangedButton != _panButton)
             return;
-        _panScroll = null;
-        ViewHost.ReleaseMouseCapture();
-        ViewHost.ClearValue(CursorProperty);
+
+        // A left click without dragging flips between the images.
+        bool flip = !_panning && _panButton == MouseButton.Left;
+        ViewCanvas.ReleaseMouseCapture();
+        EndMouse();
         e.Handled = true;
+
+        if (flip)
+            Flip();
     }
 
-    private void SliderCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void EndMouse()
     {
-        _draggingSplit = SliderCanvas.CaptureMouse();
-        MoveSplit(e.GetPosition(SliderCanvas).X);
-        e.Handled = true;
-    }
-
-    private void SliderCanvas_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (_draggingSplit)
-            MoveSplit(e.GetPosition(SliderCanvas).X);
-    }
-
-    private void MoveSplit(double x)
-    {
-        if (_diff == null || _diff.Width == 0)
-            return;
-        _split = Math.Clamp(x / _diff.Width, 0, 1);
-        UpdateSlider();
-    }
-
-    private void UpdateSlider()
-    {
-        if (_diff == null)
-            return;
-        double x = _split * _diff.Width;
-        SliderLeftImage.Clip = new RectangleGeometry(new Rect(0, 0, x, _diff.Height));
-        // Keep the divider about two screen pixels wide at any zoom.
-        double lineWidth = 2 / _zoom;
-        SliderDivider.Width = lineWidth;
-        SliderDivider.Margin = new Thickness(x - lineWidth / 2, 0, 0, 0);
+        _mouseDown = false;
+        _panning = false;
+        ViewCanvas.ClearValue(CursorProperty);
     }
 
     private void UpdatePixelReadout(MouseEventArgs e)
@@ -466,13 +406,7 @@ public partial class MainWindow : Window
         if (_diff == null || _left == null || _right == null)
             return;
 
-        FrameworkElement? canvas = _mode switch
-        {
-            ViewMode.SideBySide => SideRightCanvas.IsMouseOver ? SideRightCanvas : SideLeftCanvas,
-            ViewMode.Slider => SliderCanvas,
-            _ => DiffCanvas,
-        };
-        var p = e.GetPosition(canvas);
+        var p = e.GetPosition(ViewCanvas);
         int x = (int)Math.Floor(p.X), y = (int)Math.Floor(p.Y);
         if (x < 0 || y < 0 || x >= _diff.Width || y >= _diff.Height)
         {
@@ -491,28 +425,6 @@ public partial class MainWindow : Window
         int i = (y * image.Width + x) * 4;
         byte[] p = image.Bgra;
         return $"#{p[i + 3]:X2}{p[i + 2]:X2}{p[i + 1]:X2}{p[i]:X2}";
-    }
-
-    private FrameworkElement? CanvasUnder(DependencyObject? element)
-    {
-        for (var e = element; e != null; e = e is Visual ? VisualTreeHelper.GetParent(e) : LogicalTreeHelper.GetParent(e))
-        {
-            if (e == DiffCanvas || e == SideLeftCanvas || e == SideRightCanvas || e == SliderCanvas)
-                return (FrameworkElement)e;
-            if (e is ScrollViewer)
-                return null;
-        }
-        return null;
-    }
-
-    private static T? FindAncestor<T>(DependencyObject element) where T : DependencyObject
-    {
-        for (var e = VisualTreeHelper.GetParent(element); e != null; e = VisualTreeHelper.GetParent(e))
-        {
-            if (e is T match)
-                return match;
-        }
-        return null;
     }
 
     // ---------------------------------------------------------------- Keyboard
@@ -537,17 +449,19 @@ public partial class MainWindow : Window
                 _fit = false;
                 SetZoom(1, null);
                 break;
+            case Key.Space when !inTextBox:
+                // Ignore auto-repeat so holding the key doesn't strobe between the images.
+                e.Handled = true;
+                if (!e.IsRepeat)
+                    Flip();
+                break;
             case Key.D1 or Key.NumPad1 when !inTextBox:
                 e.Handled = true;
                 SetMode(ViewMode.Difference);
                 break;
             case Key.D2 or Key.NumPad2 when !inTextBox:
                 e.Handled = true;
-                SetMode(ViewMode.SideBySide);
-                break;
-            case Key.D3 or Key.NumPad3 when !inTextBox:
-                e.Handled = true;
-                SetMode(ViewMode.Slider);
+                SetMode(ViewMode.Flip);
                 break;
         }
     }

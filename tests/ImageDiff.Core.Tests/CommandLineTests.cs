@@ -17,10 +17,10 @@ public class CommandLineTests
     [Fact]
     public void ParsesPathsAndOptions()
     {
-        var o = CommandLine.Parse(["a.png", "b.png", "--mode", "slider", "-t", "12", "-o", "out.png", "--show"]);
+        var o = CommandLine.Parse(["a.png", "b.png", "--mode", "flip", "-t", "12", "-o", "out.png", "--show"]);
         Assert.Equal("a.png", o.LeftPath);
         Assert.Equal("b.png", o.RightPath);
-        Assert.Equal(ViewMode.Slider, o.Mode);
+        Assert.Equal(ViewMode.Flip, o.Mode);
         Assert.Equal(12, o.Tolerance);
         Assert.Equal("out.png", o.OutputPath);
         Assert.True(o.Show);
@@ -28,13 +28,12 @@ public class CommandLineTests
 
     [Theory]
     [InlineData("diff", ViewMode.Difference)]
-    [InlineData("SIDE", ViewMode.SideBySide)]
-    [InlineData("side-by-side", ViewMode.SideBySide)]
-    [InlineData("swipe", ViewMode.Slider)]
+    [InlineData("FLIP", ViewMode.Flip)]
+    [InlineData("toggle", ViewMode.Flip)]
     public void ModeNames(string name, ViewMode expected) => Assert.Equal(expected, CommandLine.ParseMode(name));
 
     [Theory]
-    [InlineData("--mode", "blink")]
+    [InlineData("--mode", "slider")]
     [InlineData("-t", "300")]
     [InlineData("-t", "abc")]
     [InlineData("--bogus")]
@@ -53,11 +52,11 @@ public class CommandLineTests
     [Fact]
     public void GuiArgumentsRoundTrip()
     {
-        var original = CommandLine.Parse(["a.png", "b.png", "-m", "side", "-t", "7", "--show"]);
+        var original = CommandLine.Parse(["a.png", "b.png", "-m", "flip", "-t", "7", "--show"]);
         var parsed = CommandLine.Parse(CommandLine.ToGuiArguments(original));
         Assert.Equal("a.png", parsed.LeftPath);
         Assert.Equal("b.png", parsed.RightPath);
-        Assert.Equal(ViewMode.SideBySide, parsed.Mode);
+        Assert.Equal(ViewMode.Flip, parsed.Mode);
         Assert.Equal(7, parsed.Tolerance);
         Assert.False(parsed.Show);
     }

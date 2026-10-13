@@ -11,21 +11,22 @@ set up:
 
 ```
 ImageDiff.exe before.png after.png
-ImageDiff.exe before.png after.png --mode slider --tolerance 4
+ImageDiff.exe before.png after.png --mode flip --tolerance 4
 ```
 
-Views (switch with the buttons or the 1, 2 and 3 keys):
+Views (switch with the buttons or the 1 and 2 keys):
 
-- **Difference**: the left image faded to grey, with every differing pixel in magenta.
-- **Side by side**: both images next to each other, scrolling together.
-- **Slider**: the left image over the right; drag across the image to move the divider.
+- **Difference**: the left image faded to grey, with every changed pixel in magenta.
+- **Flip**: one image at a time, at the same zoom and position. Press **Space**, click the
+  image, or press **Show right / Show left** to switch instantly between them, with no
+  transition, so you can spot differences by eye. A label in the corner says which image is
+  showing. Space in Difference view jumps to Flip.
 
 Other controls:
 
 - **Tolerance** ignores per-channel differences up to the chosen amount (0-255).
 - **Zoom**: Ctrl + mouse wheel zooms around the cursor, **Fit** (Ctrl+0), **100%** (Ctrl+1).
-- **Pan** by dragging with the left button (Difference and Side by side), or the middle or
-  right button in any view.
+- **Pan** by dragging with any mouse button. A left click without dragging flips.
 - The status bar shows the pixel under the cursor in both images as `#AARRGGBB`.
 - **Swap** exchanges left and right; **F5** reloads both files from disk.
 - **Save difference…** writes the highlighted image as a PNG.
@@ -34,7 +35,7 @@ Other controls:
 
 | Option | Meaning |
 | --- | --- |
-| `-m`, `--mode <diff\|side\|slider>` | View to open in (default `diff`) |
+| `-m`, `--mode <diff\|flip>` | View to open in (default `diff`) |
 | `-t`, `--tolerance <0-255>` | Ignore channel differences up to this amount (default 0) |
 | `-o`, `--output <file.png>` | Also save the highlighted difference image |
 | `-h`, `--help` | Show help |
@@ -57,7 +58,7 @@ Difference image saved to diff.png
 | `-t`, `--tolerance <0-255>` | Ignore channel differences up to this amount (default 0) |
 | `-o`, `--output <file.png>` | Save the highlighted difference image |
 | `-s`, `--show` | Also open the comparison in the window |
-| `-m`, `--mode <diff\|side\|slider>` | View the window opens in, with `--show` |
+| `-m`, `--mode <diff\|flip>` | View the window opens in, with `--show` |
 
 Exit codes: `0` identical, `1` different, `2` error.
 

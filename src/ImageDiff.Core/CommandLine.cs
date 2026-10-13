@@ -4,9 +4,11 @@ namespace ImageDiff.Core;
 
 public enum ViewMode
 {
+    /// <summary>Changed pixels highlighted over a faded copy of the left image.</summary>
     Difference,
-    SideBySide,
-    Slider,
+
+    /// <summary>One image at a time, switching instantly between left and right.</summary>
+    Flip,
 }
 
 public sealed class CommandLineOptions
@@ -30,7 +32,7 @@ public static class CommandLine
         Browse or drag them in. With two images the comparison is already set up.
 
         Options:
-          -m, --mode <diff|side|slider>  View to open in (default: diff)
+          -m, --mode <diff|flip>  View to open in (default: diff)
           -t, --tolerance <0-255>        Ignore channel differences up to this amount (default: 0)
           -o, --output <file.png>        Also save the highlighted difference image
           -h, --help                     Show this help
@@ -47,7 +49,7 @@ public static class CommandLine
           -t, --tolerance <0-255>        Ignore channel differences up to this amount (default: 0)
           -o, --output <file.png>        Save the highlighted difference image
           -s, --show                     Also open the comparison window (ImageDiff.exe)
-          -m, --mode <diff|side|slider>  View the window opens in, with --show (default: diff)
+          -m, --mode <diff|flip>  View the window opens in, with --show (default: diff)
           -h, --help                     Show this help
         """;
 
@@ -106,12 +108,7 @@ public static class CommandLine
         if (options.LeftPath != null) args.Add(options.LeftPath);
         if (options.RightPath != null) args.Add(options.RightPath);
         args.Add("--mode");
-        args.Add(options.Mode switch
-        {
-            ViewMode.SideBySide => "side",
-            ViewMode.Slider => "slider",
-            _ => "diff",
-        });
+        args.Add(options.Mode == ViewMode.Flip ? "flip" : "diff");
         args.Add("--tolerance");
         args.Add(options.Tolerance.ToString(CultureInfo.InvariantCulture));
         return args;
@@ -120,9 +117,8 @@ public static class CommandLine
     public static ViewMode ParseMode(string value) => value.ToLowerInvariant() switch
     {
         "diff" or "difference" or "highlight" => ViewMode.Difference,
-        "side" or "sidebyside" or "side-by-side" => ViewMode.SideBySide,
-        "slider" or "swipe" => ViewMode.Slider,
-        _ => throw new CommandLineException($"Unknown mode '{value}'. Use diff, side or slider."),
+        "flip" or "toggle" or "blink" => ViewMode.Flip,
+        _ => throw new CommandLineException($"Unknown mode '{value}'. Use diff or flip."),
     };
 
     private static int ParseTolerance(string value)

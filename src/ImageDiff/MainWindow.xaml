@@ -14,11 +14,6 @@
             <Setter Property="Margin" Value="0,0,12,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
-        <Style x:Key="PaneHeader" TargetType="TextBlock">
-            <Setter Property="Padding" Value="6,2" />
-            <Setter Property="Background" Value="#F0F0F0" />
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-        </Style>
         <Style TargetType="ScrollViewer">
             <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
             <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
@@ -73,9 +68,10 @@
         <Border DockPanel.Dock="Top" BorderBrush="#D0D0D0" BorderThickness="0,1" Padding="6,4">
             <WrapPanel>
                 <TextBlock Text="View:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <RadioButton x:Name="DiffModeButton" Content="Difference" GroupName="Mode" IsChecked="True" Checked="Mode_Checked" ToolTip="Highlight differing pixels (1)" />
-                <RadioButton x:Name="SideModeButton" Content="Side by side" GroupName="Mode" Checked="Mode_Checked" ToolTip="Both images next to each other (2)" />
-                <RadioButton x:Name="SliderModeButton" Content="Slider" GroupName="Mode" Checked="Mode_Checked" ToolTip="Drag the divider to reveal left or right (3)" />
+                <RadioButton x:Name="DiffModeButton" Content="Difference" GroupName="Mode" IsChecked="True" Checked="Mode_Checked" ToolTip="Highlight changed pixels (1)" />
+                <RadioButton x:Name="FlipModeButton" Content="Flip" GroupName="Mode" Checked="Mode_Checked" ToolTip="Show one image at a time; Space or click switches instantly (2)" />
+                <Button x:Name="FlipButton" Content="Show right" Click="Flip_Click" IsEnabled="False" Margin="0,0,4,0" MinWidth="90"
+                        ToolTip="Switch between left and right (Space, or click the image)" />
 
                 <Separator Margin="8,0" Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" />
 
@@ -110,62 +106,24 @@
             </StatusBarItem>
         </StatusBar>
 
-        <!-- Views -->
+        <!-- View: one canvas holds the difference image and both originals; the mode picks which is visible. -->
         <Grid x:Name="ViewHost">
-            <!-- Difference -->
-            <ScrollViewer x:Name="DiffScroll">
-                <Grid x:Name="DiffCanvas" Style="{StaticResource Canvas}">
+            <ScrollViewer x:Name="ViewScroll">
+                <Grid x:Name="ViewCanvas" Style="{StaticResource Canvas}">
                     <Grid.LayoutTransform>
-                        <ScaleTransform x:Name="DiffScale" />
+                        <ScaleTransform x:Name="ViewScale" />
                     </Grid.LayoutTransform>
                     <Image x:Name="DiffImage" />
+                    <Image x:Name="LeftImage" Visibility="Collapsed" />
+                    <Image x:Name="RightImage" Visibility="Collapsed" />
                 </Grid>
             </ScrollViewer>
 
-            <!-- Side by side -->
-            <Grid x:Name="SideView" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="5" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <DockPanel>
-                    <TextBlock x:Name="SideLeftHeader" DockPanel.Dock="Top" Style="{StaticResource PaneHeader}" Text="Left" />
-                    <ScrollViewer x:Name="SideLeftScroll">
-                        <Grid x:Name="SideLeftCanvas" Style="{StaticResource Canvas}">
-                            <Grid.LayoutTransform>
-                                <ScaleTransform x:Name="SideLeftScale" />
-                            </Grid.LayoutTransform>
-                            <Image x:Name="SideLeftImage" />
-                        </Grid>
-                    </ScrollViewer>
-                </DockPanel>
-                <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="#D0D0D0" />
-                <DockPanel Grid.Column="2">
-                    <TextBlock x:Name="SideRightHeader" DockPanel.Dock="Top" Style="{StaticResource PaneHeader}" Text="Right" />
-                    <ScrollViewer x:Name="SideRightScroll">
-                        <Grid x:Name="SideRightCanvas" Style="{StaticResource Canvas}">
-                            <Grid.LayoutTransform>
-                                <ScaleTransform x:Name="SideRightScale" />
-                            </Grid.LayoutTransform>
-                            <Image x:Name="SideRightImage" />
-                        </Grid>
-                    </ScrollViewer>
-                </DockPanel>
-            </Grid>
-
-            <!-- Slider -->
-            <ScrollViewer x:Name="SliderScroll" Visibility="Collapsed">
-                <Grid x:Name="SliderCanvas" Style="{StaticResource Canvas}" Cursor="SizeWE">
-                    <Grid.LayoutTransform>
-                        <ScaleTransform x:Name="SliderScale" />
-                    </Grid.LayoutTransform>
-                    <Image x:Name="SliderRightImage" />
-                    <Image x:Name="SliderLeftImage" />
-                    <Rectangle x:Name="SliderDivider" Fill="#FF00FF" Width="2" HorizontalAlignment="Left"
-                               VerticalAlignment="Stretch" IsHitTestVisible="False" />
-                </Grid>
-            </ScrollViewer>
+            <!-- Which image is showing in Flip view. Outside the scroll area so it stays put and unscaled. -->
+            <Border x:Name="FlipBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8"
+                    Padding="8,3" CornerRadius="3" Background="#CC000000" IsHitTestVisible="False" Visibility="Collapsed">
+                <TextBlock x:Name="FlipBadgeText" Foreground="White" FontWeight="SemiBold" />
+            </Border>
 
             <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="White" FontSize="16" TextAlignment="Center" IsHitTestVisible="False"
