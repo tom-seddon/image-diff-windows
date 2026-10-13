@@ -82,6 +82,13 @@ dotnet publish src/ImageDiff.Cli -c Release -r win-x64 --self-contained false -o
 
 Publish both into the same folder: `imgdiff --show` looks for `ImageDiff.exe` next to itself.
 
+To make a release, push a version tag. The GitHub Actions build then publishes a GitHub release with the zipped Windows build attached:
+
+```
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 Projects:
 
 - `src/ImageDiff.Core`: comparison and command-line parsing, no Windows dependencies.

@@ -23,7 +23,7 @@ public partial class App : Application
 
         if (options.ShowHelp)
         {
-            MessageBox.Show(CommandLine.GuiUsage, "Image Diff", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(CommandLine.GuiUsage, $"Image Diff {AppVersion.Current}", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown(0);
             return;
         }

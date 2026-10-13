@@ -33,9 +33,13 @@ public partial class MainWindow : Window
     private Point _panStart;
     private Vector _panStartOffset;
 
+    private static readonly string AppTitle = $"Image Diff {AppVersion.Current}";
+
     public MainWindow(CommandLineOptions options)
     {
         InitializeComponent();
+
+        Title = AppTitle;
 
         LeftPathBox.Text = options.LeftPath ?? "";
         RightPathBox.Text = options.RightPath ?? "";
@@ -99,7 +103,7 @@ public partial class MainWindow : Window
 
         LeftImage.Source = ImageFile.ToBitmapSource(left);
         RightImage.Source = ImageFile.ToBitmapSource(right);
-        Title = $"{Path.GetFileName(leftPath)} vs {Path.GetFileName(rightPath)} - Image Diff";
+        Title = $"{Path.GetFileName(leftPath)} vs {Path.GetFileName(rightPath)} - {AppTitle}";
         EmptyHint.Visibility = Visibility.Collapsed;
         FlipButton.IsEnabled = true;
         UpdateVisibleImage();

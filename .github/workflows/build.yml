@@ -7,15 +7,34 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: 0.0.0-dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+      # On a tag like v1.2.3, build as version 1.2.3 so the exes match the release.
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "VERSION=$('${{ github.ref_name }}'.Substring(1))" >> $env:GITHUB_ENV
       - run: dotnet test
-      - run: dotnet publish src/ImageDiff -c Release -r win-x64 --self-contained false -o publish
-      - run: dotnet publish src/ImageDiff.Cli -c Release -r win-x64 --self-contained false -o publish
+      - run: dotnet publish src/ImageDiff -c Release -r win-x64 --self-contained false -o publish -p:Version=$env:VERSION
+      - run: dotnet publish src/ImageDiff.Cli -c Release -r win-x64 --self-contained false -o publish -p:Version=$env:VERSION
       - uses: actions/upload-artifact@v4
         with:
           name: ImageDiff-win-x64
           path: publish
+
+      # Pushing a tag like v1.0.0 publishes a GitHub release with the zipped build.
+      - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "ImageDiff-${{ github.ref_name }}-win-x64.zip"
+          Compress-Archive -Path publish/* -DestinationPath $zip
+          gh release create "${{ github.ref_name }}" $zip --title "${{ github.ref_name }}" --generate-notes

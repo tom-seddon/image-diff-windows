@@ -20,6 +20,8 @@ catch (CommandLineException ex)
 
 if (options.ShowHelp)
 {
+    Console.WriteLine($"imgdiff {AppVersion.Current}");
+    Console.WriteLine();
     Console.WriteLine(CommandLine.CliUsage);
     return Identical;
 }

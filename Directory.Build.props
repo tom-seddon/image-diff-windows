@@ -1,0 +1,8 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Local and untagged builds. Release builds override this with the git tag's version. -->
+    <Version>0.0.0-dev</Version>
+  </PropertyGroup>
+
+</Project>
